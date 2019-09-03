@@ -2,7 +2,7 @@
 
 /**
  * Copyright © Bold Brand Commerce Sp. z o.o. All rights reserved.
- * See license.txt for license details.
+ * See LICENSE.txt for license details.
  */
 
 declare(strict_types = 1);
@@ -14,11 +14,11 @@ use Ergonode\Core\Domain\Entity\AbstractId;
 use Ergonode\EventSourcing\Infrastructure\DomainEventInterface;
 use Ergonode\EventSourcing\Infrastructure\Exception\UnsupportedEventException;
 use Ergonode\EventSourcing\Infrastructure\Projector\DomainEventProjectorInterface;
-use Ergonode\Workflow\Domain\Event\Status\StatusColorChangedEvent;
+use Ergonode\Workflow\Domain\Event\Status\StatusDeletedEvent;
 
 /**
  */
-class StatusColorChangedEventProjector implements DomainEventProjectorInterface
+class StatusDeletedEventProjector implements DomainEventProjectorInterface
 {
     private const TABLE = 'status';
 
@@ -40,7 +40,7 @@ class StatusColorChangedEventProjector implements DomainEventProjectorInterface
      */
     public function support(DomainEventInterface $event): bool
     {
-        return $event instanceof StatusColorChangedEvent;
+        return $event instanceof StatusDeletedEvent;
     }
 
     /**
@@ -48,15 +48,12 @@ class StatusColorChangedEventProjector implements DomainEventProjectorInterface
      */
     public function projection(AbstractId $aggregateId, DomainEventInterface $event): void
     {
-        if (!$event instanceof StatusColorChangedEvent) {
-            throw new UnsupportedEventException($event, StatusColorChangedEvent::class);
+        if (!$event instanceof StatusDeletedEvent) {
+            throw new UnsupportedEventException($event, StatusDeletedEvent::class);
         }
 
-        $this->connection->update(
+        $this->connection->delete(
             self::TABLE,
-            [
-                'color' => $event->getTo()->getValue(),
-            ],
             [
                 'id' => $aggregateId->getValue(),
             ]
