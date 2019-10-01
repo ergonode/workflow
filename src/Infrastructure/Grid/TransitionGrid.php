@@ -11,18 +11,19 @@ namespace Ergonode\Workflow\Infrastructure\Grid;
 
 use Ergonode\Core\Domain\ValueObject\Language;
 use Ergonode\Grid\AbstractGrid;
-use Ergonode\Grid\Column\ActionColumn;
 use Ergonode\Grid\Column\LabelColumn;
+use Ergonode\Grid\Column\LinkColumn;
 use Ergonode\Grid\Column\TextColumn;
 use Ergonode\Grid\Filter\SelectFilter;
 use Ergonode\Grid\Filter\TextFilter;
 use Ergonode\Grid\GridConfigurationInterface;
 use Ergonode\Workflow\Domain\Query\StatusQueryInterface;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  */
-class StatusGrid extends AbstractGrid
+class TransitionGrid extends AbstractGrid
 {
     /**
      * @var TranslatorInterface
@@ -35,13 +36,20 @@ class StatusGrid extends AbstractGrid
     private $statusQuery;
 
     /**
-     * @param TranslatorInterface  $translator
-     * @param StatusQueryInterface $statusQuery
+     * @var UrlGeneratorInterface
      */
-    public function __construct(TranslatorInterface $translator, StatusQueryInterface $statusQuery)
+    private $router;
+
+    /**
+     * @param TranslatorInterface   $translator
+     * @param StatusQueryInterface  $statusQuery
+     * @param UrlGeneratorInterface $router
+     */
+    public function __construct(TranslatorInterface $translator, StatusQueryInterface $statusQuery, UrlGeneratorInterface $router)
     {
         $this->translator = $translator;
         $this->statusQuery = $statusQuery;
+        $this->router = $router;
     }
 
     /**
@@ -55,17 +63,15 @@ class StatusGrid extends AbstractGrid
         $statuses = $this->statusQuery->getAllStatuses($language);
         $filters = $configuration->getFilters();
         $codes = [];
-        foreach ($statuses as $id => $status) {
-            $codes[$id] = $status['name'];
+        foreach ($statuses as $code => $status) {
+            $codes[$code] = $status['name'];
         }
 
-        $id = new TextColumn('id', $this->trans('Id'), new TextFilter($filters->getString('id')));
-        $id->setVisible(false);
-        $id->setWidth(140);
-        $this->addColumn('id', $id);
+        $code = new LabelColumn('source', $this->trans('Source'), $statuses, new SelectFilter($codes, $filters->getString('source')));
+        $this->addColumn('source', $code);
 
-        $code = new LabelColumn('code', $this->trans('Code'), $statuses, new SelectFilter($codes, $filters->getString('code')));
-        $this->addColumn('code', $code);
+        $code = new LabelColumn('destination', $this->trans('Destination'), $statuses, new SelectFilter($codes, $filters->getString('destination')));
+        $this->addColumn('destination', $code);
 
         $column = new TextColumn('name', $this->trans('Name'), new TextFilter($filters->getString('name')));
         $column->setWidth(200);
@@ -75,7 +81,11 @@ class StatusGrid extends AbstractGrid
         $column->setWidth(300);
         $this->addColumn('description', $column);
 
-        $this->addColumn('edit', new ActionColumn('edit'));
+       // 'href' =>  $this->router->generate('ergonode_product_application_api_product_getproduct', [ 'product' => $productId->getValue(), 'language' => $language->getCode()]),
+        $url1 = sprintf('/api/v1/%s/workflow/default/transitions/{source}/{destination}', $language->getCode());
+        $url2 = sprintf('/api/v1/%s/workflow/default/transitions/{source}/{destination}', $language->getCode());
+
+        $this->addColumn('_links', new LinkColumn('edit', ['edit' => ['href' => $url1], 'delete' => ['href' => $url2]]));
         $this->orderBy('code', 'DESC');
 
         $this->setConfiguration(AbstractGrid::PARAMETER_ALLOW_COLUMN_RESIZE, true);
