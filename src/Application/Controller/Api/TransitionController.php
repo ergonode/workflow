@@ -10,25 +10,25 @@ declare(strict_types = 1);
 namespace Ergonode\Workflow\Application\Controller\Api;
 
 use Ergonode\Api\Application\Exception\FormValidationHttpException;
-use Ergonode\Api\Application\Response\CreatedResponse;
 use Ergonode\Api\Application\Response\EmptyResponse;
 use Ergonode\Api\Application\Response\SuccessResponse;
+use Ergonode\Condition\Domain\Entity\ConditionSetId;
 use Ergonode\Core\Domain\ValueObject\Language;
 use Ergonode\Core\Domain\ValueObject\TranslatableString;
-use Ergonode\Core\Infrastructure\Builder\ExistingRelationshipMessageBuilderInterface;
-use Ergonode\Core\Infrastructure\Resolver\RelationshipsResolverInterface;
 use Ergonode\Grid\RequestGridConfiguration;
 use Ergonode\Grid\Response\GridResponse;
-use Ergonode\Product\Domain\Query\ProductQueryInterface;
-use Ergonode\Workflow\Application\Form\Model\StatusFormModel;
-use Ergonode\Workflow\Application\Form\StatusForm;
-use Ergonode\Workflow\Domain\Command\Status\CreateStatusCommand;
-use Ergonode\Workflow\Domain\Command\Status\DeleteStatusCommand;
-use Ergonode\Workflow\Domain\Command\Status\UpdateStatusCommand;
+use Ergonode\Workflow\Application\Form\Model\TransitionFormModel;
+use Ergonode\Workflow\Application\Form\TransitionForm;
+use Ergonode\Workflow\Domain\Command\Workflow\AddWorkflowTransitionCommand;
+use Ergonode\Workflow\Domain\Command\Workflow\DeleteWorkflowTransitionCommand;
+use Ergonode\Workflow\Domain\Command\Workflow\UpdateWorkflowTransitionCommand;
 use Ergonode\Workflow\Domain\Entity\Status;
-use Ergonode\Workflow\Domain\Query\StatusQueryInterface;
+use Ergonode\Workflow\Domain\Entity\StatusId;
+use Ergonode\Workflow\Domain\Entity\Workflow;
+use Ergonode\Workflow\Domain\Query\TransitionQueryInterface;
 use Ergonode\Workflow\Domain\ValueObject\StatusCode;
-use Ergonode\Workflow\Infrastructure\Grid\StatusGrid;
+use Ergonode\Workflow\Domain\ValueObject\Transition;
+use Ergonode\Workflow\Infrastructure\Grid\TransitionGrid;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter;
 use Swagger\Annotations as SWG;
@@ -36,14 +36,14 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
-use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\PropertyAccess\Exception\InvalidPropertyPathException;
 use Symfony\Component\Routing\Annotation\Route;
 
 /**
  */
-class StatusController extends AbstractController
+class TransitionController extends AbstractController
 {
     /**
      * @var MessageBusInterface
@@ -51,56 +51,32 @@ class StatusController extends AbstractController
     private $messageBus;
 
     /**
-     * @var StatusQueryInterface
+     * @var TransitionQueryInterface
      */
     private $query;
 
     /**
-     * @var StatusGrid
+     * @var TransitionGrid
      */
     private $grid;
 
     /**
-     * @var RelationshipsResolverInterface
-     */
-    private $relationshipsResolver;
-
-    /**
-     * @var ExistingRelationshipMessageBuilderInterface
-     */
-    private $existingRelationshipMessageBuilder;
-
-    /**
-     * @var ProductQueryInterface
-     */
-    private $productQuery;
-
-    /**
-     * @param MessageBusInterface                         $messageBus
-     * @param StatusQueryInterface                        $query
-     * @param StatusGrid                                  $grid
-     * @param RelationshipsResolverInterface              $relationshipsResolver
-     * @param ExistingRelationshipMessageBuilderInterface $existingRelationshipMessageBuilder
-     * @param ProductQueryInterface                       $productQuery
+     * @param MessageBusInterface      $messageBus
+     * @param TransitionQueryInterface $query
+     * @param TransitionGrid           $grid
      */
     public function __construct(
         MessageBusInterface $messageBus,
-        StatusQueryInterface $query,
-        StatusGrid $grid,
-        RelationshipsResolverInterface $relationshipsResolver,
-        ExistingRelationshipMessageBuilderInterface $existingRelationshipMessageBuilder,
-        ProductQueryInterface $productQuery
+        TransitionQueryInterface $query,
+        TransitionGrid $grid
     ) {
         $this->messageBus = $messageBus;
         $this->query = $query;
         $this->grid = $grid;
-        $this->relationshipsResolver = $relationshipsResolver;
-        $this->existingRelationshipMessageBuilder = $existingRelationshipMessageBuilder;
-        $this->productQuery = $productQuery;
     }
 
     /**
-     * @Route("/status", methods={"GET"})
+     * @Route("/workflow/default/transitions", methods={"GET"})
      *
      * @IsGranted("WORKFLOW_READ")
      *
@@ -111,7 +87,7 @@ class StatusController extends AbstractController
      *     type="string",
      *     required=true,
      *     default="EN",
-     *     description="Language Code"
+     *     description="Language Code",
      * )
      * @SWG\Parameter(
      *     name="limit",
@@ -119,7 +95,7 @@ class StatusController extends AbstractController
      *     type="integer",
      *     required=true,
      *     default="50",
-     *     description="Number of returned lines"
+     *     description="Number of returned lines",
      * )
      * @SWG\Parameter(
      *     name="offset",
@@ -127,14 +103,14 @@ class StatusController extends AbstractController
      *     type="integer",
      *     required=true,
      *     default="0",
-     *     description="Number of start line"
+     *     description="Number of start line",
      * )
      * @SWG\Parameter(
      *     name="field",
      *     in="query",
      *     required=false,
      *     type="string",
-     *     description="Order field"
+     *     description="Order field",
      * )
      * @SWG\Parameter(
      *     name="order",
@@ -142,7 +118,7 @@ class StatusController extends AbstractController
      *     required=false,
      *     type="string",
      *     enum={"ASC","DESC"},
-     *     description="Order"
+     *     description="Order",
      * )
      * @SWG\Parameter(
      *     name="filter",
@@ -161,33 +137,44 @@ class StatusController extends AbstractController
      * )
      * @SWG\Response(
      *     response=200,
-     *     description="Returns statuses collection"
+     *     description="Returns statuses collection",
      * )
      *
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Workflow")
      * @ParamConverter(class="Ergonode\Grid\RequestGridConfiguration")
      *
+     * @param Workflow                 $workflow
      * @param Language                 $language
      * @param RequestGridConfiguration $configuration
      *
      * @return Response
      */
-    public function getStatuses(Language $language, RequestGridConfiguration $configuration): Response
+    public function getTransitions(Workflow $workflow, Language $language, RequestGridConfiguration $configuration): Response
     {
-        return new GridResponse($this->grid, $configuration, $this->query->getDataSet($language), $language);
+        return new GridResponse($this->grid, $configuration, $this->query->getDataSet($workflow->getId(), $language), $language);
     }
 
     /**
-     * @Route("/status/{status}", methods={"GET"}, requirements={"status" = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"})
+     * @Route("/workflow/default/transitions/{source}/{destination}",
+     *     methods={"GET"}
+     *     )
      *
      * @IsGranted("WORKFLOW_READ")
      *
      * @SWG\Tag(name="Workflow")
      * @SWG\Parameter(
-     *     name="status",
+     *     name="source",
      *     in="path",
      *     type="string",
      *     required=true,
-     *     description="Status id"
+     *     description="Source status code",
+     * )
+     * @SWG\Parameter(
+     *     name="destination",
+     *     in="path",
+     *     type="string",
+     *     required=true,
+     *     description="Destination status code",
      * )
      * @SWG\Parameter(
      *     name="language",
@@ -195,30 +182,38 @@ class StatusController extends AbstractController
      *     type="string",
      *     required=true,
      *     default="EN",
-     *     description="Language Code"
+     *     description="Language Code",
      * )
      * @SWG\Response(
      *     response=200,
-     *     description="Returns status"
+     *     description="Returns status",
      * )
      * @SWG\Response(
      *     response=404,
-     *     description="Not found"
+     *     description="Not found",
      * )
      *
-     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Workflow")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status", name="source")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status", name="destination")
      *
-     * @param Status $status
+     * @param Workflow $workflow
+     * @param Status   $source
+     * @param Status   $destination
      *
      * @return Response
      */
-    public function getStatus(Status $status): Response
+    public function getTransition(Workflow $workflow, Status $source, Status $destination): Response
     {
-        return new SuccessResponse($status);
+        if ($workflow->hasTransition($source->getCode(), $destination->getCode())) {
+            return new SuccessResponse($workflow->getTransition($source->getCode(), $destination->getCode()));
+        }
+
+        throw new NotFoundHttpException();
     }
 
     /**
-     * @Route("/status", methods={"POST"})
+     * @Route("/workflow/default/transitions", methods={"POST"})
      *
      * @IsGranted("WORKFLOW_CREATE")
      *
@@ -235,11 +230,11 @@ class StatusController extends AbstractController
      *     in="body",
      *     description="Add workflow",
      *     required=true,
-     *     @SWG\Schema(ref="#/definitions/status")
+     *     @SWG\Schema(ref="#/definitions/transition")
      * )
      * @SWG\Response(
      *     response=201,
-     *     description="Returns status ID"
+     *     description="Returns status ID",
      * )
      * @SWG\Response(
      *     response=400,
@@ -247,33 +242,39 @@ class StatusController extends AbstractController
      *     @SWG\Schema(ref="#/definitions/validation_error_response")
      * )
      *
-     * @param Request $request
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Workflow")
+     *
+     * @param Workflow $workflow
+     * @param Request  $request
      *
      * @return Response
      *
      * @throws \Exception
      */
-    public function createStatus(Request $request): Response
+    public function addTransition(Workflow $workflow, Request $request): Response
     {
         try {
-            $model = new StatusFormModel();
-            $form = $this->createForm(StatusForm::class, $model);
+            $model = new TransitionFormModel();
+            $form = $this->createForm(TransitionForm::class, $model);
             $form->handleRequest($request);
 
             if ($form->isSubmitted() && $form->isValid()) {
-                /** @var StatusFormModel $data */
+                /** @var TransitionFormModel $data */
                 $data = $form->getData();
 
-                $command = new CreateStatusCommand(
-                    new StatusCode($data->code),
-                    $data->color,
+                $transition = new Transition(
+                    new StatusCode($data->source),
+                    new StatusCode($data->destination),
                     new TranslatableString($data->name),
-                    new TranslatableString($data->description)
+                    new TranslatableString($data->description),
+                    $data->conditionSet ? new ConditionSetId($data->conditionSet) : null
                 );
+
+                $command = new AddWorkflowTransitionCommand($workflow->getId(), $transition);
 
                 $this->messageBus->dispatch($command);
 
-                return new CreatedResponse($command->getId());
+                return new Response('', Response::HTTP_CREATED);
             }
         } catch (InvalidPropertyPathException $exception) {
             throw new BadRequestHttpException('Invalid JSON format');
@@ -283,17 +284,24 @@ class StatusController extends AbstractController
     }
 
     /**
-     * @Route("/status/{status}", methods={"PUT"})
+     * @Route("/workflow/default/transitions/{source}/{destination}", methods={"PUT"})
      *
      * @IsGranted("WORKFLOW_UPDATE")
      *
      * @SWG\Tag(name="Workflow")
      * @SWG\Parameter(
-     *     name="status",
+     *     name="source",
      *     in="path",
      *     type="string",
      *     required=true,
-     *     description="Status code"
+     *     description="Source status code",
+     * )
+     * @SWG\Parameter(
+     *     name="destination",
+     *     in="path",
+     *     type="string",
+     *     required=true,
+     *     description="Destination status code",
      * )
      * @SWG\Parameter(
      *     name="language",
@@ -307,7 +315,7 @@ class StatusController extends AbstractController
      *     in="body",
      *     description="Update workflow",
      *     required=true,
-     *     @SWG\Schema(ref="#/definitions/status")
+     *     @SWG\Schema(ref="#/definitions/transition")
      * )
      * @SWG\Response(
      *     response=204,
@@ -319,32 +327,40 @@ class StatusController extends AbstractController
      *     @SWG\Schema(ref="#/definitions/validation_error_response")
      * )
      *
-     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status", name="source")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status", name="destination")
      *
-     * @param Status  $status
-     * @param Request $request
+     * @param Workflow $workflow
+     * @param Status   $source
+     * @param Status   $destination
+     * @param Request  $request
      *
      * @return Response
-     *
-     * @throws \Exception
      */
-    public function updateStatus(Status $status, Request $request): Response
+    public function changeTransition(Workflow $workflow, Status $source, Status $destination, Request $request): Response
     {
         try {
-            $model = new StatusFormModel();
-            $form = $this->createForm(StatusForm::class, $model, ['method' => Request::METHOD_PUT]);
+            $model = new TransitionFormModel();
+            $form = $this->createForm(TransitionForm::class, $model, ['method' => Request::METHOD_PUT]);
             $form->handleRequest($request);
 
             if ($form->isSubmitted() && $form->isValid()) {
-                /** @var StatusFormModel $data */
+                /** @var TransitionFormModel $data */
                 $data = $form->getData();
 
-                $command = new UpdateStatusCommand(
-                    $status->getId(),
-                    $data->color,
+                $transition = new Transition(
+                    $source->getCode(),
+                    $destination->getCode(),
                     new TranslatableString($data->name),
-                    new TranslatableString($data->description)
+                    new TranslatableString($data->description),
+                    $data->conditionSet ? new ConditionSetId($data->conditionSet) : null
                 );
+
+                $command = new UpdateWorkflowTransitionCommand(
+                    $workflow->getId(),
+                    $transition
+                );
+
                 $this->messageBus->dispatch($command);
 
                 return new EmptyResponse();
@@ -357,17 +373,24 @@ class StatusController extends AbstractController
     }
 
     /**
-     * @Route("/status/{status}", methods={"DELETE"})
+     * @Route("/workflow/default/transitions/{source}/{destination}", methods={"DELETE"})
      *
      * @IsGranted("WORKFLOW_DELETE")
      *
      * @SWG\Tag(name="Workflow")
      * @SWG\Parameter(
-     *     name="status",
+     *     name="source",
      *     in="path",
      *     type="string",
      *     required=true,
-     *     description="Status code"
+     *     description="Source status code",
+     * )
+     * @SWG\Parameter(
+     *     name="destination",
+     *     in="path",
+     *     type="string",
+     *     required=true,
+     *     description="Destination status code",
      * )
      * @SWG\Parameter(
      *     name="language",
@@ -388,27 +411,21 @@ class StatusController extends AbstractController
      *     response=404,
      *     description="Status not found"
      * )
-     * @SWG\Response(
-     *     response="409",
-     *     description="Existing relationships"
-     * )
      *
-     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status", name="source")
+     * @ParamConverter(class="Ergonode\Workflow\Domain\Entity\Status", name="destination")
      *
-     * @param Status $status
+     * @param Workflow $workflow
+     * @param Status   $source
+     * @param Status   $destination
      *
      * @return Response
      *
-     * @throws \Exception
      */
-    public function deleteStatus(Status $status): Response
+    public function deleteStatus(Workflow $workflow, Status $source, Status $destination): Response
     {
-        $relationships = $this->relationshipsResolver->resolve($status->getId());
-        if (!$relationships->isEmpty()) {
-            throw new ConflictHttpException($this->existingRelationshipMessageBuilder->build($relationships));
-        }
-
-        $command = new DeleteStatusCommand($status->getId());
+        // @add validation
+        $command = new DeleteWorkflowTransitionCommand($workflow->getId(), $source->getCode(), $destination->getCode());
         $this->messageBus->dispatch($command);
 
         return new EmptyResponse();
