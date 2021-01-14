@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-namespace Ergonode\Workflow\Infrastructure\Validator;
+namespace Ergonode\Workflow\Application\Validator;
 
 use Ergonode\SharedKernel\Domain\Aggregate\StatusId;
 use Ergonode\Workflow\Domain\Entity\Status;
@@ -16,7 +16,7 @@ use Symfony\Component\Form\Exception\UnexpectedTypeException;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 
-class StatusIdNotExistsValidator extends ConstraintValidator
+class StatusExistsValidator extends ConstraintValidator
 {
     private StatusRepositoryInterface $repository;
 
@@ -34,7 +34,7 @@ class StatusIdNotExistsValidator extends ConstraintValidator
      */
     public function validate($value, Constraint $constraint): void
     {
-        if (!$constraint instanceof StatusIdNotExists) {
+        if (!$constraint instanceof StatusExists) {
             throw new UnexpectedTypeException($constraint, StatusExists::class);
         }
 

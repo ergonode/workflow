@@ -7,14 +7,14 @@
 
 declare(strict_types=1);
 
-namespace Ergonode\Workflow\Infrastructure\Validator;
+namespace Ergonode\Workflow\Application\Validator;
 
 use Symfony\Component\Validator\Constraint;
 
 /**
  * @Annotation
  */
-class StatusExists extends Constraint
+class StatusCodeUnique extends Constraint
 {
-    public string $message = 'Status {{ value }} exists';
+    public string $message = 'Status {{ value }} is not unique';
 }
