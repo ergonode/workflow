@@ -7,7 +7,7 @@
 
 declare(strict_types=1);
 
-namespace Ergonode\Workflow\Infrastructure\Validator;
+namespace Ergonode\Workflow\Application\Validator;
 
 use Ergonode\SharedKernel\Domain\Aggregate\StatusId;
 use Ergonode\Workflow\Domain\Repository\StatusRepositoryInterface;
