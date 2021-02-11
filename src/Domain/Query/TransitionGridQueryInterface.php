@@ -9,10 +9,11 @@ declare(strict_types=1);
 
 namespace Ergonode\Workflow\Domain\Query;
 
-use Ergonode\SharedKernel\Domain\Aggregate\StatusId;
+use Ergonode\Core\Domain\ValueObject\Language;
 use Ergonode\SharedKernel\Domain\Aggregate\WorkflowId;
+use Doctrine\DBAL\Query\QueryBuilder;
 
-interface TransitionQueryInterface
+interface TransitionGridQueryInterface
 {
-    public function hasStatus(WorkflowId $workflowId, StatusId $statusId): bool;
+    public function getDataSet(WorkflowId $workflowId, Language $language): QueryBuilder;
 }
